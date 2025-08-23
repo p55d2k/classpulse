@@ -1,0 +1,225 @@
+/* Level up & confetti animations extracted from class/page.tsx */
+@keyframes levelCard {
+  0% {
+    transform: scale(0.35) rotate(-12deg);
+    opacity: 0;
+  }
+  40% {
+    transform: scale(1.08) rotate(4deg);
+    opacity: 1;
+  }
+  65% {
+    transform: scale(0.94) rotate(-2deg);
+  }
+  85% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes levelNumber {
+  0% {
+    transform: scale(0.55);
+    opacity: 0;
+  }
+  34% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+  52% {
+    transform: scale(0.92);
+  }
+  78% {
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+@keyframes pulseGlow {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+@keyframes levelBG {
+  0% {
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes fadeSlide {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes burstRing {
+  0% {
+    transform: scale(0.25);
+    opacity: 0;
+  }
+  35% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  70% {
+    transform: scale(1.15);
+    opacity: 0.85;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  100% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+@keyframes confettiFall {
+  0% {
+    transform: translate3d(var(--x-start), -10%, 0) rotate(var(--rot-start));
+    opacity: 1;
+  }
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--x-end), 110%, 0) rotate(var(--rot-end));
+    opacity: 0;
+  }
+}
+@keyframes starPop {
+  0% {
+    transform: scale(0.4) rotate(-15deg);
+    filter: drop-shadow(0 0 0 rgba(251, 191, 36, 0));
+  }
+  55% {
+    transform: scale(1.15) rotate(6deg);
+    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.9));
+  }
+  80% {
+    transform: scale(0.95) rotate(-2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+@keyframes starShimmer {
+  0% {
+    opacity: 0.55;
+    filter: brightness(1);
+  }
+  50% {
+    opacity: 0.95;
+    filter: brightness(1.25);
+  }
+  100% {
+    opacity: 0.55;
+    filter: brightness(1);
+  }
+}
+@keyframes starFlash {
+  0% {
+    opacity: 0.85;
+    transform: scale(0.3);
+  }
+  40% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+  70% {
+    opacity: 0.25;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.4);
+  }
+}
+@keyframes levelPulse {
+  0% {
+    transform: scale(0.6) rotate(-8deg);
+  }
+  40% {
+    transform: scale(1.15) rotate(4deg);
+  }
+  70% {
+    transform: scale(0.95) rotate(-2deg);
+  }
+  100% {
+    transform: scale(1) rotate(0);
+  }
+}
+@keyframes fadeOut {
+  0% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+.level-burst,
+.level-burst.delay {
+  position: absolute;
+  width: 520px;
+  height: 520px;
+  border-radius: 9999px;
+  border: 2px solid rgba(255, 225, 160, 0.3);
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 215, 128, 0.28),
+    transparent 65%
+  );
+  animation: burstRing 2.4s ease forwards;
+}
+.level-burst.delay {
+  animation-delay: 0.18s;
+  filter: blur(2px);
+  border-color: rgba(255, 225, 160, 0.2);
+}
+.confetti-particle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--size);
+  height: var(--size);
+  border-radius: 2px;
+  pointer-events: none;
+  animation: confettiFall var(--dur) linear forwards;
+  will-change: transform, opacity;
+}
