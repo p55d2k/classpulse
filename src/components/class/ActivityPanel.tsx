@@ -1,22 +1,30 @@
 "use client";
-import React from "react";
+
 import { Button } from "@/components/ui/button";
+import { ShortAnswerEditor } from "./ShortAnswerEditor";
+import { ShortAnswerSubmissions } from "./ShortAnswerSubmissions";
 
 export interface ActivityPanelProps {
   activity: {
     id: string;
     type: string;
-    choices: string[];
-    allowMultiple: boolean;
-    correctAnswers: string[];
-    submitted: string[];
+    mode: "mc" | "short" | "draw"; // draw = Slide Drawing
+    choices: string[]; // MC only
+    allowMultiple: boolean; // MC only
+    correctAnswers: string[]; // MC only
+    submitted: string[]; // MC: selected choices, Short: submitted answers
+    submittedDetails?: { responseId: string; data: string }[]; // Short answer detailed mapping
+    numAllowed?: number; // Short answer only
+    captionRequired?: boolean | null; // Short answer optional
     slideUrl?: string;
     status?: string;
     reveal: boolean;
   } | null;
-  onSubmit: (choices: string[]) => void;
+  onSubmit: (data: string[]) => void; // local state update (selection / staged answer)
   onReveal: () => void;
-  onSend?: (choices: string[]) => void;
+  onSend?: (data: string[]) => void; // send to server
+  onSendShort?: (html: string) => void; // short answer raw html
+  // ...existing code...
 }
 
 export const ActivityPanel: React.FC<ActivityPanelProps> = ({
@@ -24,18 +32,24 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   onSubmit,
   onReveal,
   onSend,
+  onSendShort,
+  // ...existing code...
 }) => {
   if (!activity) return null;
 
   const {
     type,
+    mode,
     choices,
     allowMultiple,
     correctAnswers,
     submitted,
+    numAllowed = 1,
     reveal,
     status,
   } = activity;
+
+  // (legacy short answer input state removed)
 
   const toggleChoice = (c: string) => {
     if (allowMultiple) {
@@ -72,37 +86,40 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
         )}
       </div>
       <div className="grid gap-2">
-        {choices.map((c) => {
-          const active = submitted.includes(c);
-          return (
-            <button
-              key={c}
-              type="button"
-              onClick={() => toggleChoice(c)}
-              className={`group relative w-full px-4 py-3 rounded-lg border text-left transition cursor-pointer
-                ${
+        {mode === "mc" &&
+          choices.map((c) => {
+            const active = submitted.includes(c);
+            return (
+              <button
+                key={c}
+                type="button"
+                onClick={() => toggleChoice(c)}
+                className={`group relative w-full px-4 py-3 rounded-lg border text-left transition cursor-pointer ${
                   active
                     ? "border-amber-400/60 bg-amber-400/10 text-amber-200"
                     : "border-border/50 bg-background/40 hover:bg-background/70 text-foreground/90"
-                }
-                ${isCorrect(c) ? "ring-2 ring-emerald-400/70" : ""}
-                ${isIncorrectSubmitted(c) ? "opacity-50 line-through" : ""}`}
-              disabled={reveal || locked}
-            >
-              <span className="font-medium tracking-wide">{c}</span>
-            </button>
-          );
-        })}
+                } ${isCorrect(c) ? "ring-2 ring-emerald-400/70" : ""} ${
+                  isIncorrectSubmitted(c) ? "opacity-50 line-through" : ""
+                }`}
+                disabled={reveal || locked}
+              >
+                <span className="font-medium tracking-wide">{c}</span>
+              </button>
+            );
+          })}
       </div>
       <div className="pt-2 flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70 flex gap-2">
-            <span>{allowMultiple ? "Multi-select" : "Single select"}</span>
+            {mode === "mc" && (
+              <span>{allowMultiple ? "Multi-select" : "Single select"}</span>
+            )}
+            {mode === "short" && <span>Free response</span>}
             {status && (
               <span className="text-muted-foreground/50">{status}</span>
             )}
           </div>
-          {reveal && (
+          {reveal && mode === "mc" && (
             <span className="text-[11px] font-medium tracking-wide text-emerald-300/80">
               Answers revealed
             </span>
@@ -118,44 +135,84 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
             </span>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="border-border/60"
-            disabled={submitted.length === 0 || locked}
-            onClick={() => {
-              onSubmit(submitted);
-              onSend?.(submitted);
-            }}
-          >
-            Submit
-          </Button>
-          {correctAnswers.length > 0 && (
+        {mode === "mc" && (
+          <div className="flex flex-wrap items-center gap-2">
             <Button
               type="button"
               size="sm"
               variant="outline"
               className="border-border/60"
-              disabled={locked}
-              onClick={onReveal}
+              disabled={submitted.length === 0 || locked}
+              onClick={() => {
+                onSubmit(submitted);
+                onSend?.(submitted);
+              }}
             >
-              {reveal ? "Unreveal" : "Reveal"}
+              Submit
             </Button>
-          )}
-          <Button
-            type="button"
-            size="sm"
-            variant="outline"
-            className="border-border/60"
-            disabled={submitted.length === 0 || locked}
-            onClick={() => onSubmit([])}
-          >
-            Clear
-          </Button>
-        </div>
+            {correctAnswers.length > 0 && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="border-border/60"
+                disabled={locked}
+                onClick={onReveal}
+              >
+                {reveal ? "Unreveal" : "Reveal"}
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-border/60"
+              disabled={submitted.length === 0 || locked}
+              onClick={() => onSubmit([])}
+            >
+              Clear
+            </Button>
+          </div>
+        )}
+        {mode === "short" && (
+          <div className="flex flex-col gap-4">
+            {submitted.length > 0 && (
+              <ShortAnswerSubmissions
+                submitted={submitted}
+                submittedDetails={activity.submittedDetails}
+                numAllowed={numAllowed}
+              />
+            )}
+            {submitted.length < numAllowed && !locked && (
+              <ShortAnswerEditor
+                disabled={
+                  locked ||
+                  (numAllowed ? submitted.length >= numAllowed : false)
+                }
+                onSubmitHtml={(html: string) => {
+                  onSendShort?.(html); // raw html submission via hook
+                  onSubmit([...submitted, html]); // optimistic local state
+                }}
+                remaining={(numAllowed || 1) - submitted.length}
+              />
+            )}
+            {submitted.length >= numAllowed && !locked && (
+              <div className="text-[11px] italic text-muted-foreground/70">
+                Submission limit reached.
+              </div>
+            )}
+          </div>
+        )}
+        {mode === "draw" && activity.slideUrl && (
+          <div className="flex items-center justify-center h-64">
+            <span className="text-lg font-semibold text-muted-foreground">
+              Feature coming soon
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
 };
+
+// ...existing code...

@@ -39,14 +39,26 @@ export function useClassSession() {
   const slideshowActiveRef = useRef(false);
   const [activity, setActivity] = useState<{
     id: string;
-    type: string;
+    type: string; // raw activityType from server
+    mode: "mc" | "short" | "draw"; // derived client mode (draw = Slide Drawing)
+    // Multiple Choice specific
     choices: string[];
     allowMultiple: boolean;
     correctAnswers: string[];
+    // Shared: previously submitted selections (MC) or answers (Short Answer)
     submitted: string[];
+    submittedDetails?: { responseId: string; data: string }[]; // short answer detailed submissions
+    // Short Answer specific
+    numAllowed?: number; // number of submissions allowed (default 1)
+    captionRequired?: boolean | null;
+    // Common meta
     slideUrl?: string;
     status?: string;
     reveal: boolean;
+  } | null>(null);
+  const [lastDeletedResponse, setLastDeletedResponse] = useState<{
+    responseId: string;
+    ts: number;
   } | null>(null);
 
   // No per-tab ownership logic needed anymore.
@@ -194,71 +206,184 @@ export function useClassSession() {
           | undefined;
         if (activityModel && typeof activityModel === "object") {
           try {
-            const mcChoices = Array.isArray(activityModel.mcChoices)
-              ? (activityModel.mcChoices as unknown[]).map((c) => String(c))
-              : [];
-            const allowMulti = Boolean(activityModel.mcIsAllowSelectMultiple);
-            const correct = Array.isArray(activityModel.mcCorrectAnswers)
-              ? (activityModel.mcCorrectAnswers as unknown[]).map((c) =>
-                  String(c)
-                )
-              : [];
-            // Handle previously submitted responses (array of response objects) so we mark status as submitted.
-            let submitted: string[] = [];
-            let alreadySubmitted = false;
-            const joinCtx = readJoinContext();
-            if (Array.isArray(activityModel.yourSubmittedResponses)) {
-              for (const r of activityModel.yourSubmittedResponses as unknown[]) {
-                if (typeof r === "object" && r && !Array.isArray(r)) {
-                  const ro = r as Record<string, unknown>;
-                  const rPid =
-                    typeof ro.participantId === "string"
-                      ? ro.participantId
-                      : undefined;
-                  const rPname =
-                    typeof ro.participantName === "string"
-                      ? ro.participantName
-                      : undefined;
-                  const matches =
-                    (joinCtx && rPid && rPid === joinCtx.participantId) ||
-                    (joinCtx && rPname && rPname === joinCtx.participantName);
-                  if (matches) {
-                    // Parse responseData JSON array of selections
-                    const raw = ro.responseData;
-                    if (typeof raw === "string") {
-                      try {
-                        const parsed = JSON.parse(raw);
-                        if (Array.isArray(parsed)) {
-                          submitted = parsed.map((c) => String(c));
+            const actType = String(activityModel.activityType || "");
+            if (actType === "Short Answer") {
+              // Short Answer parsing
+              let submitted: string[] = [];
+              let submittedDetails: { responseId: string; data: string }[] = [];
+              let alreadySubmitted = false;
+              const joinCtx = readJoinContext();
+              if (Array.isArray(activityModel.yourSubmittedResponses)) {
+                for (const r of activityModel.yourSubmittedResponses as unknown[]) {
+                  if (typeof r === "object" && r && !Array.isArray(r)) {
+                    const ro = r as Record<string, unknown>;
+                    const rPid =
+                      typeof ro.participantId === "string"
+                        ? ro.participantId
+                        : undefined;
+                    const rPname =
+                      typeof ro.participantName === "string"
+                        ? ro.participantName
+                        : undefined;
+                    const matches =
+                      (joinCtx && rPid && rPid === joinCtx.participantId) ||
+                      (joinCtx && rPname && rPname === joinCtx.participantName);
+                    if (matches) {
+                      const raw = ro.responseData;
+                      if (typeof raw === "string") {
+                        try {
+                          const parsed = JSON.parse(raw);
+                          if (Array.isArray(parsed))
+                            submitted = parsed.map((c) => String(c));
+                          else if (parsed) submitted = [String(parsed)];
+                        } catch {
+                          submitted = [raw];
                         }
-                      } catch {
-                        // ignore parse error
                       }
+                      // responseId support
+                      const respId =
+                        typeof ro.responseId === "string"
+                          ? ro.responseId
+                          : Array.isArray(ro.responseIds) &&
+                            typeof ro.responseIds[0] === "string"
+                          ? (ro.responseIds[0] as string)
+                          : undefined;
+                      submittedDetails = submitted.map((d, idx) => ({
+                        responseId: respId || `legacy-${idx}`,
+                        data: d,
+                      }));
+                      alreadySubmitted = submitted.length > 0;
+                      break;
                     }
-                    alreadySubmitted = true;
-                    break; // our submission found
                   }
                 }
               }
-            }
-            setActivity({
-              id: String(activityModel.activityId || ""),
-              type: String(activityModel.activityType || ""),
-              choices: mcChoices,
-              allowMultiple: allowMulti,
-              correctAnswers: correct,
-              submitted,
-              slideUrl:
-                typeof activityModel.activitySlideUrl === "string"
-                  ? (activityModel.activitySlideUrl as string)
+              setActivity({
+                id: String(activityModel.activityId || ""),
+                type: actType,
+                mode: "short",
+                choices: [],
+                allowMultiple: false,
+                correctAnswers: [],
+                submitted,
+                submittedDetails,
+                numAllowed:
+                  typeof activityModel.numOfSubmissionsAllowed === "number"
+                    ? activityModel.numOfSubmissionsAllowed
+                    : 1,
+                captionRequired: (activityModel as Record<string, unknown>)
+                  .isCaptionRequired as boolean | null | undefined,
+                slideUrl:
+                  typeof activityModel.activitySlideUrl === "string"
+                    ? (activityModel.activitySlideUrl as string)
+                    : undefined,
+                status: alreadySubmitted
+                  ? "submitted"
+                  : typeof activityModel.activityStatus === "string"
+                  ? (activityModel.activityStatus as string)
                   : undefined,
-              status: alreadySubmitted
-                ? "submitted"
-                : typeof activityModel.activityStatus === "string"
-                ? (activityModel.activityStatus as string)
-                : undefined,
-              reveal: false,
-            });
+                reveal: false,
+              });
+            } else if (actType === "Slide Drawing") {
+              // Slide Drawing parsing (behaves like one submission allowed by default)
+              let alreadySubmitted = false;
+              let submitted: string[] = [];
+              if (Array.isArray(activityModel.yourSubmittedResponses)) {
+                for (const r of activityModel.yourSubmittedResponses as unknown[]) {
+                  if (typeof r === "object" && r && !Array.isArray(r)) {
+                    const ro = r as Record<string, unknown>;
+                    const raw = ro.responseData;
+                    if (typeof raw === "string" && raw) {
+                      submitted = [raw]; // expected to be URL to PNG
+                      alreadySubmitted = true;
+                      break;
+                    }
+                  }
+                }
+              }
+              setActivity({
+                id: String(activityModel.activityId || ""),
+                type: actType,
+                mode: "draw",
+                choices: [],
+                allowMultiple: false,
+                correctAnswers: [],
+                submitted,
+                slideUrl:
+                  typeof activityModel.activitySlideUrl === "string"
+                    ? (activityModel.activitySlideUrl as string)
+                    : undefined,
+                status: alreadySubmitted
+                  ? "submitted"
+                  : typeof activityModel.activityStatus === "string"
+                  ? (activityModel.activityStatus as string)
+                  : undefined,
+                reveal: false,
+              });
+            } else {
+              // Multiple Choice parsing (existing)
+              const mcChoices = Array.isArray(activityModel.mcChoices)
+                ? (activityModel.mcChoices as unknown[]).map((c) => String(c))
+                : [];
+              const allowMulti = Boolean(activityModel.mcIsAllowSelectMultiple);
+              const correct = Array.isArray(activityModel.mcCorrectAnswers)
+                ? (activityModel.mcCorrectAnswers as unknown[]).map((c) =>
+                    String(c)
+                  )
+                : [];
+              let submitted: string[] = [];
+              let alreadySubmitted = false;
+              const joinCtx = readJoinContext();
+              if (Array.isArray(activityModel.yourSubmittedResponses)) {
+                for (const r of activityModel.yourSubmittedResponses as unknown[]) {
+                  if (typeof r === "object" && r && !Array.isArray(r)) {
+                    const ro = r as Record<string, unknown>;
+                    const rPid =
+                      typeof ro.participantId === "string"
+                        ? ro.participantId
+                        : undefined;
+                    const rPname =
+                      typeof ro.participantName === "string"
+                        ? ro.participantName
+                        : undefined;
+                    const matches =
+                      (joinCtx && rPid && rPid === joinCtx.participantId) ||
+                      (joinCtx && rPname && rPname === joinCtx.participantName);
+                    if (matches) {
+                      const raw = ro.responseData;
+                      if (typeof raw === "string") {
+                        try {
+                          const parsed = JSON.parse(raw);
+                          if (Array.isArray(parsed))
+                            submitted = parsed.map((c) => String(c));
+                        } catch {}
+                      }
+                      alreadySubmitted = true;
+                      break;
+                    }
+                  }
+                }
+              }
+              setActivity({
+                id: String(activityModel.activityId || ""),
+                type: actType,
+                mode: "mc",
+                choices: mcChoices,
+                allowMultiple: allowMulti,
+                correctAnswers: correct,
+                submitted,
+                slideUrl:
+                  typeof activityModel.activitySlideUrl === "string"
+                    ? (activityModel.activitySlideUrl as string)
+                    : undefined,
+                status: alreadySubmitted
+                  ? "submitted"
+                  : typeof activityModel.activityStatus === "string"
+                  ? (activityModel.activityStatus as string)
+                  : undefined,
+                reveal: false,
+              });
+            }
           } catch (e) {
             logger.warn("Failed to parse activityModel from SendJoinClass", e);
           }
@@ -389,31 +514,132 @@ export function useClassSession() {
         const p = payload as Record<string, unknown>;
         // Explicitly clear any existing activity before loading the new one.
         setActivity(null);
-        const mcChoices = Array.isArray(p.mcChoices)
-          ? (p.mcChoices as unknown[]).map((c) => String(c))
-          : [];
-        const allowMulti = Boolean(p.mcIsAllowSelectMultiple);
-        const correct = Array.isArray(p.mcCorrectAnswers)
-          ? (p.mcCorrectAnswers as unknown[]).map((c) => String(c))
-          : [];
-        const submitted = Array.isArray(p.yourSubmittedResponses)
-          ? (p.yourSubmittedResponses as unknown[]).map((c) => String(c))
-          : [];
-        setActivity({
-          id: String(p.activityId || ""),
-          type: String(p.activityType || ""),
-          choices: mcChoices,
-          allowMultiple: allowMulti,
-          correctAnswers: correct,
-          submitted,
-          slideUrl:
-            typeof p.activitySlideUrl === "string"
-              ? p.activitySlideUrl
+        const actType = String(p.activityType || "");
+  if (actType === "Short Answer") {
+          // Short Answer
+          let submitted: string[] = [];
+          let submittedDetails: { responseId: string; data: string }[] = [];
+          if (Array.isArray(p.yourSubmittedResponses)) {
+            for (const r of p.yourSubmittedResponses as unknown[]) {
+              if (typeof r === "object" && r && !Array.isArray(r)) {
+                const ro = r as Record<string, unknown>;
+                const raw = ro.responseData;
+                if (typeof raw === "string") {
+                  try {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed))
+                      submitted = parsed.map((c) => String(c));
+                    else if (parsed) submitted = [String(parsed)];
+                  } catch {
+                    submitted = [raw];
+                  }
+                }
+                const respId =
+                  typeof ro.responseId === "string"
+                    ? ro.responseId
+                    : Array.isArray(ro.responseIds) &&
+                      typeof ro.responseIds[0] === "string"
+                    ? (ro.responseIds[0] as string)
+                    : undefined;
+                submittedDetails = submitted.map((d, idx) => ({
+                  responseId: respId || `legacy-${idx}`,
+                  data: d,
+                }));
+              }
+            }
+          }
+          setActivity({
+            id: String(p.activityId || ""),
+            type: actType,
+            mode: "short",
+            choices: [],
+            allowMultiple: false,
+            correctAnswers: [],
+            submitted,
+            submittedDetails,
+            numAllowed:
+              typeof p.numOfSubmissionsAllowed === "number"
+                ? (p.numOfSubmissionsAllowed as number)
+                : 1,
+            captionRequired: p.hasOwnProperty("isCaptionRequired")
+              ? (p.isCaptionRequired as boolean | null | undefined)
               : undefined,
-          status:
-            typeof p.activityStatus === "string" ? p.activityStatus : undefined,
-          reveal: false,
-        });
+            slideUrl:
+              typeof p.activitySlideUrl === "string"
+                ? (p.activitySlideUrl as string)
+                : undefined,
+            status:
+              typeof p.activityStatus === "string"
+                ? (p.activityStatus as string)
+                : undefined,
+            reveal: false,
+          });
+        } else if (actType === "Slide Drawing") {
+          let alreadySubmitted = false;
+          let submitted: string[] = [];
+          if (Array.isArray(p.yourSubmittedResponses)) {
+            for (const r of p.yourSubmittedResponses as unknown[]) {
+              if (typeof r === "object" && r && !Array.isArray(r)) {
+                const ro = r as Record<string, unknown>;
+                const raw = ro.responseData;
+                if (typeof raw === "string" && raw) {
+                  submitted = [raw];
+                  alreadySubmitted = true;
+                  break;
+                }
+              }
+            }
+          }
+          setActivity({
+            id: String(p.activityId || ""),
+            type: actType,
+            mode: "draw",
+            choices: [],
+            allowMultiple: false,
+            correctAnswers: [],
+            submitted,
+            slideUrl:
+              typeof p.activitySlideUrl === "string"
+                ? (p.activitySlideUrl as string)
+                : undefined,
+            status: alreadySubmitted
+              ? "submitted"
+              : typeof p.activityStatus === "string"
+              ? (p.activityStatus as string)
+              : undefined,
+            reveal: false,
+          });
+        } else {
+          // Multiple Choice (existing)
+          const mcChoices = Array.isArray(p.mcChoices)
+            ? (p.mcChoices as unknown[]).map((c) => String(c))
+            : [];
+          const allowMulti = Boolean(p.mcIsAllowSelectMultiple);
+          const correct = Array.isArray(p.mcCorrectAnswers)
+            ? (p.mcCorrectAnswers as unknown[]).map((c) => String(c))
+            : [];
+          const submitted = Array.isArray(p.yourSubmittedResponses)
+            ? (p.yourSubmittedResponses as unknown[]).map((c) => String(c))
+            : [];
+          setActivity({
+            id: String(p.activityId || ""),
+            type: actType,
+            mode: "mc",
+            choices: mcChoices,
+            allowMultiple: allowMulti,
+            correctAnswers: correct,
+            submitted,
+            slideUrl:
+              typeof p.activitySlideUrl === "string"
+                ? p.activitySlideUrl
+                : undefined,
+            status:
+              typeof p.activityStatus === "string"
+                ? p.activityStatus
+                : undefined,
+            reveal: false,
+          });
+        }
       }
     });
 
@@ -478,6 +704,32 @@ export function useClassSession() {
     // Custom event: another tab made the connection
     hub.on("ConnectionMadeOnAnotherTab", () => {
       logger.warn("ConnectionMadeOnAnotherTab received");
+      hub.on("DeletedResponse", (payload: unknown) => {
+        // This event removes a previously submitted response (short answer)
+        if (!payload || typeof payload !== "object") return;
+        const p = payload as Record<string, unknown>;
+        const responseId =
+          typeof p.responseId === "string" ? p.responseId : undefined;
+        const participantId =
+          typeof p.participantId === "string" ? p.participantId : undefined;
+        if (!responseId) return;
+        const ctx = readJoinContext();
+        if (participantId && ctx && participantId !== ctx.participantId) return; // ignore others
+        setActivity((a) => {
+          if (!a || a.mode !== "short" || !a.submittedDetails) return a;
+          const filteredDetails = a.submittedDetails.filter(
+            (d) => d.responseId !== responseId
+          );
+          if (filteredDetails.length === a.submittedDetails.length) return a;
+          return {
+            ...a,
+            submittedDetails: filteredDetails,
+            submitted: filteredDetails.map((d) => d.data),
+            status: filteredDetails.length === 0 ? undefined : a.status,
+          };
+        });
+        setLastDeletedResponse({ responseId, ts: Date.now() });
+      });
       setMessages((m) => [
         ...m,
         { t: "ConnectionMadeOnAnotherTab", payload: {}, ts: Date.now() },
@@ -537,7 +789,7 @@ export function useClassSession() {
 
   const submitActivityResponse = useCallback(
     (choices: string[]) => {
-      if (!activity || !hubRef.current || choices.length === 0) return;
+  if (!activity || !hubRef.current || choices.length === 0) return;
       try {
         const ctx = readJoinContext();
         const responseId =
@@ -553,17 +805,110 @@ export function useClassSession() {
           activityId: activity.id,
           activityType: activity.type,
           responseId: `resp-${responseId}`,
-          responseData: JSON.stringify(choices),
+          responseData: JSON.stringify(choices), // maintain array contract for both MC & Short Answer
         };
         hubRef.current.invoke("SubmitResponse", payload).catch(() => {});
-        // optionally set status
-        setActivity((a) => (a ? { ...a, status: "submitted" } : a));
+        // Mark submitted (for Short Answer respect numAllowed: if more submissions allowed keep status 'submitting')
+        setActivity((a) => {
+          if (!a) return a;
+          const numAllowed = a.numAllowed ?? 1;
+          const total = a.submitted.length;
+          const nextCount = total + choices.length; // choices may be a single answer or selections
+          const done = nextCount >= numAllowed;
+          return {
+            ...a,
+            status: done ? "submitted" : a.status || "submitting",
+          };
+        });
       } catch (e) {
         logger.warn("SubmitResponse invoke failed", e);
       }
     },
     [activity]
   );
+
+  // Short Answer raw HTML submission (responseData is raw HTML string, not JSON array)
+  const submitShortAnswer = useCallback(
+    (html: string) => {
+  if (!activity || activity.mode !== "short" || !hubRef.current) return;
+      const trimmed = html.trim();
+      if (!trimmed) return;
+      try {
+        const ctx = readJoinContext();
+        const responseId =
+          (typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2)) || Date.now().toString();
+        const payload = {
+          presenterEmail: ctx?.presenterEmail || "",
+          participantId: ctx?.participantId || "",
+          participantName:
+            ctx?.participantName || ctx?.participantUsername || "",
+          participantAvatar: "",
+          activityId: activity.id,
+          activityType: activity.type,
+          responseId: `resp-${responseId}`,
+          responseData: trimmed, // raw HTML per platform expectation
+        };
+        hubRef.current.invoke("SubmitResponse", payload).catch(() => {});
+        setActivity((a) => {
+          if (!a) return a;
+          const numAllowed = a.numAllowed ?? 1;
+          const nextSubmitted = [...a.submitted, trimmed];
+          const nextDetails = [
+            ...(a.submittedDetails || []),
+            { responseId: `resp-${responseId}`, data: trimmed },
+          ];
+          const done = nextSubmitted.length >= numAllowed;
+          return {
+            ...a,
+            submitted: nextSubmitted,
+            submittedDetails: nextDetails,
+            status: done ? "submitted" : a.status || "submitting",
+          };
+        });
+      } catch (e) {
+        logger.warn("SubmitResponse (short answer html) failed", e);
+      }
+    },
+    [activity]
+  );
+
+  // Handle deletion of a previously submitted short answer response
+  useEffect(() => {
+    const hub = hubRef.current;
+    if (!hub) return;
+    const handler = (payload: unknown) => {
+      if (!payload || typeof payload !== "object") return;
+      const p = payload as Record<string, unknown>;
+      const responseId =
+        typeof p.responseId === "string" ? p.responseId : undefined;
+      const participantId =
+        typeof p.participantId === "string" ? p.participantId : undefined;
+      if (!responseId) return;
+      const ctx = readJoinContext();
+      if (participantId && ctx && participantId !== ctx.participantId) return; // only affect our own submissions
+      setActivity((a) => {
+        if (!a || a.mode !== "short") return a;
+        if (!a.submittedDetails || a.submittedDetails.length === 0) return a;
+        const filteredDetails = a.submittedDetails.filter(
+          (d) => d.responseId !== responseId
+        );
+        if (filteredDetails.length === a.submittedDetails.length) return a; // no change
+        const filteredSubmitted = filteredDetails.map((d) => d.data);
+        return {
+          ...a,
+          submittedDetails: filteredDetails,
+          submitted: filteredSubmitted,
+          status: filteredSubmitted.length === 0 ? undefined : a.status,
+        };
+      });
+    };
+    hub.on("DeletedResponse", handler);
+    return () => {
+      hub.off("DeletedResponse", handler);
+    };
+  }, []);
 
   // No ownership to release now.
 
@@ -594,7 +939,8 @@ export function useClassSession() {
     startConnection();
     return () => {
       // Only decrement if we're cleaning up the same mount instance
-      if (mountCountRef.current === initialMountIndex) {
+      const mountIndexSnapshot = initialMountIndex;
+      if (mountCountRef.current === mountIndexSnapshot) {
         mountCountRef.current--;
       }
       if (mountCountRef.current <= 0) {
@@ -609,6 +955,51 @@ export function useClassSession() {
       }
     };
   }, [startConnection]);
+
+  // Slide Drawing submission: accepts a Blob (PNG) -> converts to data URL then invokes SubmitResponse.
+  const submitSlideDrawing = useCallback(
+    async (blob: Blob) => {
+      if (!activity || activity.mode !== "draw" || !hubRef.current) return;
+      try {
+        // Convert blob to base64 data URL
+        const dataUrl: string = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result));
+            reader.onerror = (e) => reject(e);
+            reader.readAsDataURL(blob);
+        });
+        const ctx = readJoinContext();
+        const responseId =
+          (typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2)) || Date.now().toString();
+        const payload = {
+          presenterEmail: ctx?.presenterEmail || "",
+          participantId: ctx?.participantId || "",
+          participantName:
+            ctx?.participantName || ctx?.participantUsername || "",
+          participantAvatar: "",
+          activityId: activity.id,
+          activityType: activity.type,
+          responseId: `resp-${responseId}`,
+          responseData: dataUrl, // embed PNG as data URL; server expected to accept a URL - this can be changed to upload flow later
+        };
+        hubRef.current.invoke("SubmitResponse", payload).catch(() => {});
+        setActivity((a) =>
+          a
+            ? {
+                ...a,
+                submitted: [dataUrl],
+                status: "submitted",
+              }
+            : a
+        );
+      } catch (e) {
+        logger.warn("SubmitResponse (slide drawing) failed", e);
+      }
+    },
+    [activity]
+  );
 
   return {
     status,
@@ -634,9 +1025,12 @@ export function useClassSession() {
     submitActivityChoices,
     toggleActivityReveal,
     submitActivityResponse,
+    submitShortAnswer,
     setStars,
     setConfettiBursts,
     setSlideImageLoading,
+  lastDeletedResponse,
+  submitSlideDrawing,
   } as ClassSessionState & {
     setStars: typeof setStars;
     setConfettiBursts: typeof setConfettiBursts;
@@ -648,5 +1042,8 @@ export function useClassSession() {
     submitActivityChoices: typeof submitActivityChoices;
     toggleActivityReveal: typeof toggleActivityReveal;
     submitActivityResponse: typeof submitActivityResponse;
+    submitShortAnswer: typeof submitShortAnswer;
+  lastDeletedResponse: typeof lastDeletedResponse;
+  submitSlideDrawing: typeof submitSlideDrawing;
   };
 }

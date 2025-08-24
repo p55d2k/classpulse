@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import Image from "next/image";
 import { readJoinContext, clearJoinContext } from "@/lib/classSession";
 import { useRouter } from "next/navigation";
@@ -47,10 +47,18 @@ export default function ClassPage() {
     submitActivityChoices,
     toggleActivityReveal,
     submitActivityResponse,
+    submitShortAnswer,
+  lastDeletedResponse,
+  submitSlideDrawing,
   } = useClassSession();
   const router = useRouter();
   const [removedToastVisible, setRemovedToastVisible] = useState(false);
   const [modalVisible, setModalVisible] = useState(false);
+  const leaveSentRef = useRef(false);
+  const [deleteToast, setDeleteToast] = useState<{
+    responseId: string;
+    ts: number;
+  } | null>(null);
 
   // Validate join context on first mount; redirect home if invalid
   useEffect(() => {
@@ -124,6 +132,15 @@ export default function ClassPage() {
     }
   }, [duplicateConnection, removedFromClass]);
 
+  // Show toast when a response deletion event occurs
+  useEffect(() => {
+    if (lastDeletedResponse) {
+      setDeleteToast(lastDeletedResponse);
+      const to = setTimeout(() => setDeleteToast(null), 3500);
+      return () => clearTimeout(to);
+    }
+  }, [lastDeletedResponse]);
+
   // Old overlay lifecycle removed; new animation self-contained via CSS keyframes.
 
   const handleLeave = () => {
@@ -172,6 +189,41 @@ export default function ClassPage() {
     logger.info("Participant left class (no active connection)");
     doStop();
   };
+
+  // Attempt automatic leave on tab close / refresh
+  useEffect(() => {
+    const handler = () => {
+      if (leaveSentRef.current) return;
+      leaveSentRef.current = true;
+      try {
+        const ctx = readJoinContext();
+        if (connection && ctx) {
+          const payload = {
+            deviceId: ctx.participantId,
+            classCode: ctx.classCode,
+            presenterEmail: ctx.presenterEmail,
+            cpcsRegion: ctx.cpcsRegion,
+            savedParticipantsForJoin: [],
+            participantId: ctx.participantId,
+            participantUsername: ctx.participantUsername,
+            participantName: ctx.participantName,
+            participantAvatar: "",
+            participantPoints: 0,
+            participantTotalPoints: 0,
+            pointsBeingAdded: 0,
+            isFromSavedClass: false,
+            groupId: null,
+            language: "en",
+            isAddingPoints: false,
+          };
+          // Fire-and-forget; SignalR might not complete, acceptable best-effort
+          connection.invoke("ParticipantLeaveClass", payload).catch(() => {});
+        }
+      } catch {}
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [connection]);
 
   const ctx = readJoinContext();
   const sessionDurationSec = Math.floor((Date.now() - joinedAt) / 1000);
@@ -329,6 +381,8 @@ export default function ClassPage() {
             onSubmit={submitActivityChoices}
             onReveal={toggleActivityReveal}
             onSend={submitActivityResponse}
+            onSendShort={submitShortAnswer}
+            onSendDrawing={(blob) => submitSlideDrawing(blob)}
           />
           <StarsRankDisplay
             stars={stars}
@@ -427,6 +481,21 @@ export default function ClassPage() {
           </span>
           <div className="text-sm text-red-100/90 font-medium tracking-wide">
             You were removed from the class. Redirecting...
+          </div>
+        </div>
+      )}
+      {deleteToast && (
+        <div
+          className="fixed top-[4.5rem] left-1/2 -translate-x-1/2 z-[190] px-4 py-2 rounded-lg border border-amber-400/40 bg-amber-500/15 backdrop-blur-md shadow-md flex items-center gap-2 animate-[fadeIn_.4s_ease]"
+          role="status"
+          aria-live="polite"
+        >
+          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-amber-500/30 text-amber-200 text-xs font-bold">
+            i
+          </span>
+          <div className="text-xs text-amber-100/90 font-medium tracking-wide">
+            Response removed
+            <span className="opacity-60 ml-1">({deleteToast.responseId})</span>
           </div>
         </div>
       )}

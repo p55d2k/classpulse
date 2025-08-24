@@ -117,6 +117,18 @@ export function StarsRankDisplay({
   // Align with other sidebar cards: use rounded-xl, similar padding to Card (p-6) but keep internal layout tight.
   const baseRadius = "rounded-xl";
   const outerPad = condensed ? "px-4 py-3" : "px-5 py-4";
+
+  // Track previous stars for animation
+  const [prevStars, setPrevStars] = React.useState(stars);
+  const [starAnim, setStarAnim] = React.useState(false);
+  React.useEffect(() => {
+    if (stars > prevStars) {
+      setStarAnim(true);
+      setTimeout(() => setStarAnim(false), 900); // animation duration
+    }
+    setPrevStars(stars);
+  }, [stars, prevStars]);
+
   return (
     <div
       className={`relative w-full flex items-center ${
@@ -163,17 +175,38 @@ export function StarsRankDisplay({
       </div>
       <div className="flex flex-col justify-center relative z-10 flex-1 min-w-0">
         <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-end gap-2">
+          <div className="flex items-center gap-2 relative">
             <svg
               viewBox="0 0 24 24"
-              className={`${sizes.starIcon} text-amber-50 drop-shadow-[0_0_16px_rgba(251,191,36,0.95)] animate-[starPop_.6s_ease]`}
+              className={`${
+                sizes.starIcon
+              } text-amber-50 drop-shadow-[0_0_16px_rgba(251,191,36,0.95)] ${
+                starAnim ? "animate-starBurst" : "animate-starPop_.6s_ease"
+              }`}
               fill="currentColor"
+              key={`star-${stars}`}
+              style={{ zIndex: 2 }}
             >
               <path d="M12 2.75l2.9 6.06 6.68.97-4.84 4.72 1.14 6.65L12 17.77l-5.88 3.38 1.14-6.65L2.42 9.78l6.68-.97L12 2.75z" />
             </svg>
+            {starAnim && (
+              <span
+                className="absolute left-0 top-0 w-full h-full pointer-events-none z-1 animate-starGlow"
+                style={{
+                  background:
+                    "radial-gradient(circle at center, rgba(255,255,128,0.55), rgba(255,215,128,0.25) 40%, transparent 70%)",
+                  borderRadius: "50%",
+                }}
+              />
+            )}
             <span
               key={stars}
-              className={`${sizes.starFont} font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-amber-50 via-amber-200 to-orange-200 drop-shadow-[0_0_14px_rgba(251,191,36,0.85)] tabular-nums animate-[starPop_.6s_ease]`}
+              className={`${
+                sizes.starFont
+              } font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-br from-amber-50 via-amber-200 to-orange-200 drop-shadow-[0_0_14px_rgba(251,191,36,0.85)] tabular-nums ${
+                starAnim ? "animate-starBurstText" : "animate-starPop_.6s_ease"
+              }`}
+              style={{ zIndex: 3 }}
             >
               {stars}
             </span>
