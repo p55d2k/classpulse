@@ -1,225 +1,169 @@
-/* Level up & confetti animations extracted from class/page.tsx */
-@keyframes levelCard {
-  0% {
-    transform: scale(0.35) rotate(-12deg);
-    opacity: 0;
-  }
-  40% {
-    transform: scale(1.08) rotate(4deg);
-    opacity: 1;
-  }
-  65% {
-    transform: scale(0.94) rotate(-2deg);
-  }
-  85% {
-    transform: scale(1) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes levelNumber {
-  0% {
-    transform: scale(0.55);
-    opacity: 0;
-  }
-  34% {
-    transform: scale(1.15);
-    opacity: 1;
-  }
-  52% {
-    transform: scale(0.92);
-  }
-  78% {
-    transform: scale(1);
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes sweep {
-  0% {
-    transform: translateX(-100%);
-  }
-  100% {
-    transform: translateX(0);
-  }
-}
-@keyframes pulseGlow {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-@keyframes levelBG {
+/* NEW Level Up Overlay (minimal code, fresh design) */
+
+@keyframes luBackdrop {
   0% {
     opacity: 0;
   }
-  15% {
+  10% {
     opacity: 1;
   }
   85% {
     opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
-@keyframes fadeSlide {
-  0% {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  100% {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-@keyframes burstRing {
-  0% {
-    transform: scale(0.25);
-    opacity: 0;
-  }
-  35% {
-    transform: scale(1);
-    opacity: 1;
-  }
-  70% {
-    transform: scale(1.15);
-    opacity: 0.85;
-  }
-  100% {
-    transform: scale(1.5);
-    opacity: 0;
-  }
-}
-@keyframes fadeIn {
-  0% {
-    opacity: 0;
-    transform: translate(-50%, -6px);
-  }
-  100% {
-    opacity: 1;
-    transform: translate(-50%, 0);
-  }
-}
-@keyframes confettiFall {
-  0% {
-    transform: translate3d(var(--x-start), -10%, 0) rotate(var(--rot-start));
-    opacity: 1;
-  }
-  80% {
-    opacity: 1;
-  }
-  100% {
-    transform: translate3d(var(--x-end), 110%, 0) rotate(var(--rot-end));
-    opacity: 0;
-  }
-}
-@keyframes starPop {
-  0% {
-    transform: scale(0.4) rotate(-15deg);
-    filter: drop-shadow(0 0 0 rgba(251, 191, 36, 0));
-  }
-  55% {
-    transform: scale(1.15) rotate(6deg);
-    filter: drop-shadow(0 0 10px rgba(251, 191, 36, 0.9));
-  }
-  80% {
-    transform: scale(0.95) rotate(-2deg);
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-  }
-}
-@keyframes starShimmer {
-  0% {
-    opacity: 0.55;
-    filter: brightness(1);
-  }
-  50% {
-    opacity: 0.95;
-    filter: brightness(1.25);
-  }
-  100% {
-    opacity: 0.55;
-    filter: brightness(1);
-  }
-}
-@keyframes starFlash {
-  0% {
-    opacity: 0.85;
-    transform: scale(0.3);
-  }
-  40% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  70% {
-    opacity: 0.25;
-  }
-  100% {
-    opacity: 0;
-    transform: scale(1.4);
-  }
-}
-@keyframes levelPulse {
-  0% {
-    transform: scale(0.6) rotate(-8deg);
-  }
-  40% {
-    transform: scale(1.15) rotate(4deg);
-  }
-  70% {
-    transform: scale(0.95) rotate(-2deg);
-  }
-  100% {
-    transform: scale(1) rotate(0);
-  }
-}
-@keyframes fadeOut {
-  0% {
-    opacity: 1;
-  }
-  60% {
-    opacity: 0.6;
   }
   100% {
     opacity: 0;
   }
 }
 
-.level-burst,
-.level-burst.delay {
+@keyframes luRings {
+  0% {
+    transform: translate(-50%, -50%) scale(0.2);
+    opacity: 0;
+  }
+  35% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.9;
+  }
+  70% {
+    transform: translate(-50%, -50%) scale(1.25);
+    opacity: 0.55;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1.55);
+    opacity: 0;
+  }
+}
+
+@keyframes luTitle {
+  0% {
+    transform: translateY(18px) scale(0.9);
+    opacity: 0;
+    letter-spacing: 0.25em;
+  }
+  28% {
+    transform: translateY(0) scale(1.08);
+    opacity: 1;
+  }
+  55% {
+    transform: translateY(0) scale(0.96);
+  }
+  78% {
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.94);
+  }
+}
+
+@keyframes luNumber {
+  0% {
+    opacity: 0;
+    transform: scale(0.4) rotate(-8deg);
+    filter: blur(6px);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1.15) rotate(4deg);
+    filter: blur(0);
+  }
+  55% {
+    transform: scale(0.95) rotate(-2deg);
+  }
+  75% {
+    transform: scale(1) rotate(0);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(0.9) rotate(2deg);
+  }
+}
+
+@keyframes luParticles {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120px) scale(1.2);
+    opacity: 0;
+  }
+}
+
+.lu-overlay {
+  animation: luBackdrop 3.6s ease forwards;
+}
+
+.lu-ring {
   position: absolute;
+  top: 50%;
+  left: 50%;
   width: 520px;
   height: 520px;
-  border-radius: 9999px;
-  border: 2px solid rgba(255, 225, 160, 0.3);
-  background: radial-gradient(
-    circle at center,
-    rgba(255, 215, 128, 0.28),
-    transparent 65%
-  );
-  animation: burstRing 2.4s ease forwards;
-}
-.level-burst.delay {
-  animation-delay: 0.18s;
-  filter: blur(2px);
-  border-color: rgba(255, 225, 160, 0.2);
-}
-.confetti-particle {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: var(--size);
-  height: var(--size);
-  border-radius: 2px;
-  pointer-events: none;
-  animation: confettiFall var(--dur) linear forwards;
+  border-radius: 50%;
+  border: 2px solid var(--lu-ring-border, rgba(255, 255, 255, 0.18));
+  backdrop-filter: blur(2px);
+  transform: translate(-50%, -50%) scale(0.2);
+  animation: luRings 3.4s ease forwards;
+  animation-fill-mode: both;
   will-change: transform, opacity;
+}
+.lu-ring.secondary {
+  animation-delay: 0.22s;
+  filter: blur(2px);
+  border-color: var(--lu-ring-border-secondary, rgba(255, 255, 255, 0.12));
+}
+.lu-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.35em;
+  animation: luTitle 3.2s ease forwards;
+}
+.lu-number {
+  font-size: 140px;
+  line-height: 1;
+  font-weight: 800;
+  background: linear-gradient(
+    135deg,
+    var(--lu-grad-1, #fff7e3),
+    var(--lu-grad-2, #ffe2a8),
+    var(--lu-grad-3, #ffc368)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: luNumber 3.2s ease forwards;
+}
+.lu-particles span {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: linear-gradient(
+    var(--lu-part-1, #ffe29a),
+    var(--lu-part-2, #ffb347)
+  );
+  border-radius: 50%;
+  transform-origin: center;
+  animation: luParticles 3.3s linear forwards;
+}
+
+/* Ensure particle field is centered (parent should be relative) */
+.lu-particles {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 520px;
+  height: 520px;
+  pointer-events: none;
+}
+
+/* utility to prevent flicker */
+.lu-container {
+  will-change: opacity, transform;
 }

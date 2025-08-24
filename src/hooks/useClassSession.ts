@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import * as signalR from "@microsoft/signalr";
-import { readJoinContext } from "@/lib/classSession";
+import { readJoinContext, persistJoinContext } from "@/lib/classSession";
 import { logger } from "@/lib/logger";
 import {
   ClassSessionState,
@@ -26,9 +26,30 @@ export function useClassSession() {
   const [justLeveled, setJustLeveled] = useState(false);
   const prevLevelRef = useRef(1);
   const firstLevelRef = useRef(true);
+  const initialPointsAppliedRef = useRef(false);
   const [joinedAt] = useState(Date.now());
   const [confettiBursts, setConfettiBursts] = useState<number[]>([]);
   const [removedFromClass, setRemovedFromClass] = useState(false);
+  const [duplicateConnection, setDuplicateConnection] = useState(false);
+  const reconnectingOverrideRef = useRef(false);
+  // Prevent duplicate SignalR connections (StrictMode / HMR double-invoke)
+  const startedRef = useRef(false);
+  const hubRef = useRef<signalR.HubConnection | null>(null);
+  const mountCountRef = useRef(0);
+  const slideshowActiveRef = useRef(false);
+  const [activity, setActivity] = useState<{
+    id: string;
+    type: string;
+    choices: string[];
+    allowMultiple: boolean;
+    correctAnswers: string[];
+    submitted: string[];
+    slideUrl?: string;
+    status?: string;
+    reveal: boolean;
+  } | null>(null);
+
+  // No per-tab ownership logic needed anymore.
 
   // derived level
   const level = (() => {
@@ -45,6 +66,14 @@ export function useClassSession() {
     : 1;
 
   const startConnection = useCallback(async () => {
+    // Reuse existing hub if present
+    if (hubRef.current) {
+      setConnection(hubRef.current);
+      return;
+    }
+    // Guard against parallel starts
+    if (startedRef.current) return;
+    startedRef.current = true; // set before async work
     const ctx = readJoinContext();
     if (!ctx) return;
     const region = ctx.cpcsRegion;
@@ -60,7 +89,13 @@ export function useClassSession() {
 
     hub.onreconnecting(() => setStatus("Reconnecting..."));
     hub.onreconnected(() => setStatus("Connected"));
-    hub.onclose(() => setStatus("Disconnected"));
+    hub.onclose(() => {
+      setStatus("Disconnected");
+      if (hubRef.current === hub) {
+        hubRef.current = null;
+        startedRef.current = false;
+      }
+    });
 
     hub.on("SendJoinClass", (payload: unknown) => {
       logger.info("SendJoinClass", payload);
@@ -72,7 +107,161 @@ export function useClassSession() {
       if (typeof payload === "object" && payload !== null) {
         const p = payload as Record<string, unknown>;
         if (typeof p.participantPoints === "number") {
-          setStars(p.participantPoints);
+          const newStars = p.participantPoints;
+          setStars(newStars);
+          // Suppress level-up animation for the very first authoritative points sync
+          if (!initialPointsAppliedRef.current) {
+            // Derive level we are jumping to and lock prev refs
+            let derivedLevel = 1;
+            for (let i = levelThresholds.length - 1; i >= 0; i--) {
+              if (newStars >= levelThresholds[i]) {
+                derivedLevel = i + 1;
+                break;
+              }
+            }
+            prevLevelRef.current = derivedLevel; // baseline
+            firstLevelRef.current = false;
+            initialPointsAppliedRef.current = true;
+          }
+        }
+
+        // Override any previously persisted participant identity details with authoritative server values.
+        try {
+          const existingCtx = readJoinContext();
+          // Helper to fetch either camelCase or PascalCase property names without using 'any'.
+          const readStringProp = (
+            obj: Record<string, unknown>,
+            key: string
+          ): string | undefined => {
+            const direct = obj[key];
+            if (typeof direct === "string") return direct;
+            const pascal = obj[`${key[0].toUpperCase()}${key.slice(1)}`];
+            return typeof pascal === "string" ? pascal : undefined;
+          };
+          const participantId = readStringProp(p, "participantId");
+          const participantName = readStringProp(p, "participantName");
+          const participantUsername = readStringProp(p, "participantUsername");
+          const classSessionId = readStringProp(p, "classSessionId");
+          if (existingCtx) {
+            let changed = false;
+            const updated = { ...existingCtx };
+            if (participantId && participantId !== existingCtx.participantId) {
+              updated.participantId = participantId;
+              changed = true;
+            }
+            if (
+              participantName &&
+              participantName !== existingCtx.participantName
+            ) {
+              updated.participantName = participantName;
+              changed = true;
+            }
+            if (
+              participantUsername &&
+              participantUsername !== existingCtx.participantUsername
+            ) {
+              updated.participantUsername = participantUsername;
+              changed = true;
+            }
+            if (
+              classSessionId &&
+              classSessionId !== existingCtx.classSessionId &&
+              classSessionId.trim() !== ""
+            ) {
+              updated.classSessionId = classSessionId;
+              changed = true;
+            }
+            if (changed) {
+              persistJoinContext(updated);
+              logger.info("Participant identity updated from SendJoinClass", {
+                participantId: updated.participantId,
+                participantName: updated.participantName,
+                participantUsername: updated.participantUsername,
+                classSessionId: updated.classSessionId,
+              });
+            }
+          }
+        } catch (e) {
+          logger.warn(
+            "Failed to update participant identity from SendJoinClass",
+            e
+          );
+        }
+
+        // If an activity is already in progress when we join, initialize it here.
+        const activityModel = p.activityModel as
+          | Record<string, unknown>
+          | undefined;
+        if (activityModel && typeof activityModel === "object") {
+          try {
+            const mcChoices = Array.isArray(activityModel.mcChoices)
+              ? (activityModel.mcChoices as unknown[]).map((c) => String(c))
+              : [];
+            const allowMulti = Boolean(activityModel.mcIsAllowSelectMultiple);
+            const correct = Array.isArray(activityModel.mcCorrectAnswers)
+              ? (activityModel.mcCorrectAnswers as unknown[]).map((c) =>
+                  String(c)
+                )
+              : [];
+            // Handle previously submitted responses (array of response objects) so we mark status as submitted.
+            let submitted: string[] = [];
+            let alreadySubmitted = false;
+            const joinCtx = readJoinContext();
+            if (Array.isArray(activityModel.yourSubmittedResponses)) {
+              for (const r of activityModel.yourSubmittedResponses as unknown[]) {
+                if (typeof r === "object" && r && !Array.isArray(r)) {
+                  const ro = r as Record<string, unknown>;
+                  const rPid =
+                    typeof ro.participantId === "string"
+                      ? ro.participantId
+                      : undefined;
+                  const rPname =
+                    typeof ro.participantName === "string"
+                      ? ro.participantName
+                      : undefined;
+                  const matches =
+                    (joinCtx && rPid && rPid === joinCtx.participantId) ||
+                    (joinCtx && rPname && rPname === joinCtx.participantName);
+                  if (matches) {
+                    // Parse responseData JSON array of selections
+                    const raw = ro.responseData;
+                    if (typeof raw === "string") {
+                      try {
+                        const parsed = JSON.parse(raw);
+                        if (Array.isArray(parsed)) {
+                          submitted = parsed.map((c) => String(c));
+                        }
+                      } catch {
+                        // ignore parse error
+                      }
+                    }
+                    alreadySubmitted = true;
+                    break; // our submission found
+                  }
+                }
+              }
+            }
+            setActivity({
+              id: String(activityModel.activityId || ""),
+              type: String(activityModel.activityType || ""),
+              choices: mcChoices,
+              allowMultiple: allowMulti,
+              correctAnswers: correct,
+              submitted,
+              slideUrl:
+                typeof activityModel.activitySlideUrl === "string"
+                  ? (activityModel.activitySlideUrl as string)
+                  : undefined,
+              status: alreadySubmitted
+                ? "submitted"
+                : typeof activityModel.activityStatus === "string"
+                ? (activityModel.activityStatus as string)
+                : undefined,
+              reveal: false,
+            });
+          } catch (e) {
+            logger.warn("Failed to parse activityModel from SendJoinClass", e);
+          }
         }
       }
       const inShow = Boolean(
@@ -82,11 +271,17 @@ export function useClassSession() {
               (payload as Record<string, unknown>).inSlideshow
           : false
       );
+      slideshowActiveRef.current = inShow;
       setIsInSlideshow(inShow);
       if (!inShow) setSlide(null);
+      // Duplicate connection modal now only managed by explicit server event.
     });
 
     hub.on("SlideChanged", (payload: unknown) => {
+      if (!slideshowActiveRef.current) {
+        // Ignore slide updates when slideshow is not active per latest SendJoinClass / EndSlideshow.
+        return;
+      }
       logger.info("SlideChanged", payload);
       setMessages((m) => [
         ...m,
@@ -126,6 +321,146 @@ export function useClassSession() {
       setConfettiBursts((b) => [...b, Date.now()]);
     });
 
+    // Explicit slideshow end
+    hub.on("PresenterEndSlideshow", () => {
+      logger.info("PresenterEndSlideshow received");
+      setMessages((m) => [
+        ...m,
+        { t: "PresenterEndSlideshow", payload: {}, ts: Date.now() },
+      ]);
+      setEventsCount((c) => c + 1);
+      setIsInSlideshow(false);
+      setSlide(null);
+      slideshowActiveRef.current = false;
+    });
+
+    // Explicit slideshow start (may precede SlideChanged events)
+    hub.on("PresenterStartSlideShow", (payload: unknown) => {
+      logger.info("PresenterStartSlideShow received", payload);
+      setMessages((m) => [
+        ...m,
+        { t: "PresenterStartSlideShow", payload, ts: Date.now() },
+      ]);
+      setEventsCount((c) => c + 1);
+      setIsInSlideshow(true);
+      slideshowActiveRef.current = true;
+      // Try to derive initial slide context immediately for smoother UX
+      if (typeof payload === "object" && payload !== null) {
+        const p = payload as Record<string, unknown>;
+        const showRaw =
+          (p.currentSlideshow as unknown) ||
+          (p.currentSlideshowDto as unknown) ||
+          (p.slideshow as unknown);
+        if (showRaw && typeof showRaw === "object") {
+          interface SlideShowLike {
+            totalSlideCount?: number;
+            slideCount?: number;
+            currentSlideIndex?: number;
+            imageUrl?: string;
+            currentImageUrl?: string;
+          }
+          const show = showRaw as SlideShowLike;
+          const total =
+            Number((show.totalSlideCount ?? show.slideCount ?? 0) as number) ||
+            undefined;
+          const currentIndex = Number(show.currentSlideIndex ?? 0);
+          const idx = currentIndex + 1; // 1-based for UI
+          const imageUrl: string | undefined =
+            show.imageUrl || show.currentImageUrl || undefined;
+          setSlideImageLoading(!!imageUrl);
+          setSlide({
+            index: idx,
+            title: undefined,
+            imageUrl,
+            totalSlideCount: total,
+          });
+        }
+      }
+    });
+
+    hub.on("ActivityStarted", (payload: unknown) => {
+      logger.info("ActivityStarted", payload);
+      setMessages((m) => [
+        ...m,
+        { t: "ActivityStarted", payload, ts: Date.now() },
+      ]);
+      setEventsCount((c) => c + 1);
+      if (typeof payload === "object" && payload !== null) {
+        const p = payload as Record<string, unknown>;
+        // Explicitly clear any existing activity before loading the new one.
+        setActivity(null);
+        const mcChoices = Array.isArray(p.mcChoices)
+          ? (p.mcChoices as unknown[]).map((c) => String(c))
+          : [];
+        const allowMulti = Boolean(p.mcIsAllowSelectMultiple);
+        const correct = Array.isArray(p.mcCorrectAnswers)
+          ? (p.mcCorrectAnswers as unknown[]).map((c) => String(c))
+          : [];
+        const submitted = Array.isArray(p.yourSubmittedResponses)
+          ? (p.yourSubmittedResponses as unknown[]).map((c) => String(c))
+          : [];
+        setActivity({
+          id: String(p.activityId || ""),
+          type: String(p.activityType || ""),
+          choices: mcChoices,
+          allowMultiple: allowMulti,
+          correctAnswers: correct,
+          submitted,
+          slideUrl:
+            typeof p.activitySlideUrl === "string"
+              ? p.activitySlideUrl
+              : undefined,
+          status:
+            typeof p.activityStatus === "string" ? p.activityStatus : undefined,
+          reveal: false,
+        });
+      }
+    });
+
+    hub.on("ActivityEnded", () => {
+      logger.info("ActivityEnded received");
+      setMessages((m) => [
+        ...m,
+        { t: "ActivityEnded", payload: {}, ts: Date.now() },
+      ]);
+      setEventsCount((c) => c + 1);
+      setActivity(null);
+    });
+
+    hub.on("CorrectAnswerShown", (flag: unknown) => {
+      const revealFlag = Boolean(flag);
+      logger.info("CorrectAnswerShown", { reveal: revealFlag });
+      setMessages((m) => [
+        ...m,
+        {
+          t: "CorrectAnswerShown",
+          payload: { reveal: revealFlag },
+          ts: Date.now(),
+        },
+      ]);
+      setEventsCount((c) => c + 1);
+      setActivity((a) => (a ? { ...a, reveal: revealFlag } : a));
+    });
+
+    // ActivityClosed: server no longer accepts submissions for current activity
+    hub.on("ActivityClosed", () => {
+      logger.info("ActivityClosed received");
+      setMessages((m) => [
+        ...m,
+        { t: "ActivityClosed", payload: {}, ts: Date.now() },
+      ]);
+      setEventsCount((c) => c + 1);
+      setActivity((a) =>
+        a
+          ? {
+              ...a,
+              // Preserve 'submitted' if participant already submitted; otherwise mark closed
+              status: a.status === "submitted" ? a.status : "closed",
+            }
+          : a
+      );
+    });
+
     hub.on("RemovedFromClass", () => {
       logger.warn("RemovedFromClass received; ending session");
       setMessages((m) => [
@@ -140,10 +475,22 @@ export function useClassSession() {
       } catch {}
     });
 
+    // Custom event: another tab made the connection
+    hub.on("ConnectionMadeOnAnotherTab", () => {
+      logger.warn("ConnectionMadeOnAnotherTab received");
+      setMessages((m) => [
+        ...m,
+        { t: "ConnectionMadeOnAnotherTab", payload: {}, ts: Date.now() },
+      ]);
+      // Show modal immediately when server notifies.
+      setDuplicateConnection(true);
+    });
+
     try {
       setStatus("Connecting...");
       await hub.start();
       setStatus("Connected");
+      hubRef.current = hub;
       setConnection(hub);
       const ctx2 = readJoinContext();
       if (ctx2) {
@@ -160,8 +507,65 @@ export function useClassSession() {
     } catch (e: unknown) {
       logger.error("Failed to start SignalR", e);
       setStatus("Failed");
+      if (!hubRef.current) startedRef.current = false; // allow retry
     }
   }, []);
+
+  // Removed ownership negotiation: modal only appears from explicit server signal.
+
+  const forceReconnect = useCallback(async () => {
+    if (reconnectingOverrideRef.current) return;
+    reconnectingOverrideRef.current = true;
+    setStatus("Reconnecting...");
+    try {
+      if (hubRef.current) await hubRef.current.stop();
+    } catch {}
+    setConnection(null);
+    hubRef.current = null;
+    setDuplicateConnection(false);
+    reconnectingOverrideRef.current = false;
+    startedRef.current = false;
+    await startConnection();
+  }, [startConnection]);
+
+  const submitActivityChoices = useCallback((choices: string[]) => {
+    setActivity((a) => (a ? { ...a, submitted: choices } : a));
+  }, []);
+  const toggleActivityReveal = useCallback(() => {
+    setActivity((a) => (a ? { ...a, reveal: !a.reveal } : a));
+  }, []);
+
+  const submitActivityResponse = useCallback(
+    (choices: string[]) => {
+      if (!activity || !hubRef.current || choices.length === 0) return;
+      try {
+        const ctx = readJoinContext();
+        const responseId =
+          (typeof crypto !== "undefined" && crypto.randomUUID
+            ? crypto.randomUUID()
+            : Math.random().toString(36).slice(2)) || Date.now().toString();
+        const payload = {
+          presenterEmail: ctx?.presenterEmail || "",
+          participantId: ctx?.participantId || "",
+          participantName:
+            ctx?.participantName || ctx?.participantUsername || "",
+          participantAvatar: "",
+          activityId: activity.id,
+          activityType: activity.type,
+          responseId: `resp-${responseId}`,
+          responseData: JSON.stringify(choices),
+        };
+        hubRef.current.invoke("SubmitResponse", payload).catch(() => {});
+        // optionally set status
+        setActivity((a) => (a ? { ...a, status: "submitted" } : a));
+      } catch (e) {
+        logger.warn("SubmitResponse invoke failed", e);
+      }
+    },
+    [activity]
+  );
+
+  // No ownership to release now.
 
   // monitor level ups
   useEffect(() => {
@@ -185,7 +589,25 @@ export function useClassSession() {
   }, [level]);
 
   useEffect(() => {
+    mountCountRef.current++;
+    const initialMountIndex = mountCountRef.current; // capture snapshot
     startConnection();
+    return () => {
+      // Only decrement if we're cleaning up the same mount instance
+      if (mountCountRef.current === initialMountIndex) {
+        mountCountRef.current--;
+      }
+      if (mountCountRef.current <= 0) {
+        const h = hubRef.current;
+        hubRef.current = null;
+        startedRef.current = false;
+        if (h) {
+          try {
+            h.stop().catch(() => {});
+          } catch {}
+        }
+      }
+    };
   }, [startConnection]);
 
   return {
@@ -206,6 +628,12 @@ export function useClassSession() {
     slideImageLoading,
     confettiBursts,
     removedFromClass,
+    duplicateConnection,
+    forceReconnect,
+    activity,
+    submitActivityChoices,
+    toggleActivityReveal,
+    submitActivityResponse,
     setStars,
     setConfettiBursts,
     setSlideImageLoading,
@@ -214,5 +642,11 @@ export function useClassSession() {
     setConfettiBursts: typeof setConfettiBursts;
     setProfile: typeof setProfile;
     setSlideImageLoading: typeof setSlideImageLoading;
+    duplicateConnection: boolean;
+    forceReconnect: () => Promise<void>;
+    activity: typeof activity;
+    submitActivityChoices: typeof submitActivityChoices;
+    toggleActivityReveal: typeof toggleActivityReveal;
+    submitActivityResponse: typeof submitActivityResponse;
   };
 }

@@ -46,6 +46,8 @@ export interface ClassSessionState {
   slideImageLoading: boolean;
   confettiBursts: number[];
   removedFromClass?: boolean;
+  /** True if hub notifies that another tab has taken over the connection */
+  duplicateConnection?: boolean;
 }
 
 // Join / validation related types

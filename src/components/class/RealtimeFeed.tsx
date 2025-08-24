@@ -8,15 +8,16 @@ interface FeedProps {
 
 export function RealtimeFeed({ messages }: FeedProps) {
   return (
-    <Card className="border-border/60 bg-background/70 backdrop-blur">
-      <CardHeader className="pb-2">
+    <Card className="border-border/60 bg-background/70 backdrop-blur flex-1 hidden lg:flex flex-col min-h-[300px]">
+      <CardHeader className="px-4 py-3 pb-3">
         <CardTitle className="text-sm font-semibold tracking-wide flex items-center gap-2">
           <span className="inline-flex h-2 w-2 rounded-full bg-purple-500" />
           Realtime Feed
         </CardTitle>
       </CardHeader>
-      <CardContent>
-        <div className="h-56 overflow-auto text-xs pr-2 space-y-3 font-mono">
+      <CardContent className="flex-1 flex flex-col px-4 pb-4 pt-0 min-h-0">
+        {/* Scroll region fills card when card stretches; otherwise natural height */}
+        <div className="flex-1 overflow-auto text-xs pr-1 space-y-3 font-mono min-h-[220px]">
           {messages.length === 0 && (
             <div className="text-muted-foreground/70 italic">
               Waiting for events...

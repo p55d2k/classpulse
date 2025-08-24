@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import Image from "next/image";
 import { readJoinContext, clearJoinContext } from "@/lib/classSession";
 import { useRouter } from "next/navigation";
@@ -15,6 +15,7 @@ import { PresenterCard } from "@/components/class/PresenterCard";
 import { ParticipantCard } from "@/components/class/ParticipantCard";
 import { SessionStats } from "@/components/class/SessionStats";
 import { ContextCard } from "@/components/class/ContextCard";
+import { ActivityPanel } from "@/components/class/ActivityPanel";
 import "@/styles/levelUp.css";
 
 export default function ClassPage() {
@@ -40,9 +41,16 @@ export default function ClassPage() {
     confettiBursts,
     removedFromClass,
     justLeveled,
+    duplicateConnection,
+    forceReconnect,
+    activity,
+    submitActivityChoices,
+    toggleActivityReveal,
+    submitActivityResponse,
   } = useClassSession();
   const router = useRouter();
   const [removedToastVisible, setRemovedToastVisible] = useState(false);
+  const [modalVisible, setModalVisible] = useState(false);
 
   // Validate join context on first mount; redirect home if invalid
   useEffect(() => {
@@ -106,6 +114,18 @@ export default function ClassPage() {
     })();
   }, [setProfile]);
 
+  // Manage fade-in for duplicate connection modal
+  useEffect(() => {
+    if (duplicateConnection && !removedFromClass) {
+      // next frame ensures transition runs
+      requestAnimationFrame(() => setModalVisible(true));
+    } else {
+      setModalVisible(false);
+    }
+  }, [duplicateConnection, removedFromClass]);
+
+  // Old overlay lifecycle removed; new animation self-contained via CSS keyframes.
+
   const handleLeave = () => {
     const ctx = readJoinContext();
     const doStop = () => {
@@ -160,28 +180,56 @@ export default function ClassPage() {
   }s`;
   // Points metric removed (was prototype pseudoPoints)
 
+  const levelOverlayStyle = useMemo(() => {
+    // Derive a hue from level (wrap around 0-360) and build tints
+    const hue = (level * 37) % 360; // 37 gives good distribution
+    const light = (l: number) => `hsl(${hue} 100% ${l}% / 1)`;
+    return {
+      ["--lu-grad-1"]: light(92),
+      ["--lu-grad-2"]: light(80),
+      ["--lu-grad-3"]: light(68),
+      ["--lu-ring-border"]: `hsl(${hue} 85% 78% / 0.4)`,
+      ["--lu-ring-border-secondary"]: `hsl(${hue} 85% 78% / 0.22)`,
+      ["--lu-part-1"]: light(88),
+      ["--lu-part-2"]: light(70),
+    } as React.CSSProperties; // custom properties allowed
+  }, [level]);
+
   return (
     <div className="min-h-screen flex flex-col p-4 gap-4 relative">
       {/* Level Up Full-Screen Overlay */}
       {justLeveled && !removedFromClass && (
-        <div className="fixed inset-0 z-[150] pointer-events-none flex items-center justify-center">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,215,128,0.18),transparent_70%)] animate-[levelBG_2.6s_ease forwards]" />
-          <div className="relative flex flex-col items-center justify-center">
-            <div className="level-burst" />
-            <div className="level-burst delay" />
-            <div className="px-10 py-8 rounded-2xl backdrop-blur-xl bg-gradient-to-br from-amber-500/70 via-yellow-400/55 to-orange-500/70 border border-amber-200/30 shadow-2xl flex flex-col items-center gap-3 animate-[levelCard_2.3s_ease]">
-              <span className="text-xs font-semibold uppercase tracking-[0.35em] text-amber-50/85 animate-[fadeSlide_0.8s_ease]">
-                Level Up
+        <div
+          className="fixed inset-0 z-[150] pointer-events-none flex items-center justify-center lu-container"
+          style={levelOverlayStyle}
+        >
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(25,25,25,0.4),rgba(0,0,0,0.85))] lu-overlay" />
+          <div className="relative flex flex-col items-center justify-center select-none">
+            <div className="lu-ring" />
+            <div className="lu-ring secondary" />
+            <div className="lu-particles">
+              {Array.from({ length: 28 }).map((_, i) => (
+                <span
+                  key={i}
+                  style={{
+                    left: `${50 + (Math.random() * 60 - 30)}%`,
+                    animationDelay: `${Math.random() * 0.6}s`,
+                    transform: `translateX(-50%) scale(${
+                      0.6 + Math.random() * 0.8
+                    })`,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="flex flex-col items-center gap-3 relative">
+              <span className="lu-title font-semibold tracking-[0.4em] text-amber-200/90">
+                LEVEL
               </span>
-              <span className="block text-[120px] leading-none font-black bg-clip-text text-transparent bg-gradient-to-br from-amber-50 via-amber-200 to-orange-200 drop-shadow-[0_8px_24px_rgba(0,0,0,0.45)] animate-[levelNumber_2.1s_ease]">
+              <span className="lu-number drop-shadow-[0_8px_30px_rgba(0,0,0,0.55)]">
                 {level}
               </span>
-              <span className="absolute inset-0 blur-2xl opacity-40 bg-gradient-to-br from-amber-200 via-yellow-200 to-orange-300 animate-[pulseGlow_2.2s_ease]" />
-              <div className="h-1 w-48 bg-white/15 rounded-full overflow-hidden">
-                <div className="h-full w-full bg-gradient-to-r from-amber-300 via-yellow-300 to-orange-400 animate-[sweep_2.1s_linear]" />
-              </div>
-              <span className="text-xs tracking-wide text-amber-50/85 animate-[fadeSlide_0.9s_.15s_ease_forwards]">
-                Welcome to Level {level}
+              <span className="text-[11px] uppercase tracking-[0.35em] text-amber-100/70 mt-1 opacity-80">
+                Achieved
               </span>
             </div>
           </div>
@@ -200,7 +248,9 @@ export default function ClassPage() {
             priority
           />
           <div>
-            <h1 className="text-lg font-semibold tracking-tight">Live Class</h1>
+            <h1 className="text-lg font-semibold tracking-tight">
+              ClassPulse: Live Class
+            </h1>
             <div className="text-[11px] uppercase tracking-wider text-muted-foreground/80 flex gap-2">
               <span
                 className={`${
@@ -263,7 +313,7 @@ export default function ClassPage() {
       {/* Main Grid */}
       <div className="grid gap-4 flex-1 auto-rows-min lg:grid-cols-[1fr_380px]">
         {/* Left Column */}
-        <div className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 min-h-0 flex-1">
           <SlideViewer
             slide={slide}
             isInSlideshow={isInSlideshow}
@@ -274,6 +324,12 @@ export default function ClassPage() {
 
         {/* Sidebar */}
         <div className="flex flex-col gap-4 lg:sticky lg:top-4">
+          <ActivityPanel
+            activity={activity}
+            onSubmit={submitActivityChoices}
+            onReveal={toggleActivityReveal}
+            onSend={submitActivityResponse}
+          />
           <StarsRankDisplay
             stars={stars}
             level={level}
@@ -292,12 +348,73 @@ export default function ClassPage() {
             joinedAt={joinedAt}
             eventsCount={eventsCount}
             formattedDuration={formattedDuration}
+            lastEventTs={
+              messages.length ? messages[messages.length - 1].ts : joinedAt
+            }
           />
           <ContextCard ctx={ctx} />
         </div>
       </div>
 
       <LogPanel />
+
+      {/* Duplicate Connection Modal (Big Popup) */}
+      {duplicateConnection && !removedFromClass && (
+        <div
+          className={`fixed inset-0 z-[300] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-opacity duration-200 ${
+            modalVisible ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          <div className="relative w-full max-w-xl mx-auto bg-gradient-to-br from-background/90 via-background/70 to-background/90 border border-border/70 rounded-3xl shadow-2xl p-10 flex flex-col gap-8">
+            <div className="flex items-start gap-5">
+              <div className="h-16 w-16 flex items-center justify-center rounded-2xl bg-amber-500/15 text-amber-300 border border-amber-300/30">
+                <svg
+                  width="36"
+                  height="36"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 9v4" />
+                  <path d="M12 17h.01" />
+                  <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                </svg>
+              </div>
+              <div className="flex-1 flex flex-col gap-3 pr-2">
+                <h2 className="text-3xl font-bold tracking-tight leading-tight bg-clip-text text-transparent bg-gradient-to-r from-amber-300 via-yellow-200 to-orange-300">
+                  You have joined class on another tab.
+                </h2>
+                <p className="text-base leading-relaxed text-muted-foreground/90">
+                  Switch the active class session to{" "}
+                  <span className="font-medium text-foreground">this</span> tab?
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-4 pt-2">
+              <Button
+                size="lg"
+                type="button"
+                variant="outline"
+                onClick={handleLeave}
+              >
+                Leave class
+              </Button>
+              <Button
+                size="lg"
+                type="button"
+                onClick={() => forceReconnect()}
+                className="relative"
+              >
+                OK
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Removal Toast */}
       {removedToastVisible && (
         <div

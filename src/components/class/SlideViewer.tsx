@@ -11,7 +11,7 @@ interface Props {
 
 export function SlideViewer({ slide, isInSlideshow, loading }: Props) {
   return (
-    <Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-muted/20 via-background to-muted/10 flex-1 min-h-[360px]">
+  <Card className="relative overflow-hidden border-border/60 bg-gradient-to-br from-muted/20 via-background to-muted/10 min-h-[360px]">
       <CardHeader className="pb-2">
         <CardTitle className="text-base flex items-center justify-between">
           <span className="flex items-center gap-2">
@@ -20,7 +20,7 @@ export function SlideViewer({ slide, isInSlideshow, loading }: Props) {
           </span>
           {slide && (
             <span className="text-[11px] font-medium text-muted-foreground flex items-center gap-1 tabular-nums px-2 py-0.5 rounded-full bg-muted/30 border border-border/40">
-              <span className="opacity-70 tracking-wide mr-0.5">Slide</span>
+              <span className="opacity-70 tracking-wide">Slide</span>
               <span className="text-foreground">{slide.index}</span>
               {slide.totalSlideCount && (
                 <span className="opacity-60">/ {slide.totalSlideCount}</span>
