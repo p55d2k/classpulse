@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Classpoint Client",
-  description: "A custom classpoint client.",
+  title: "ClassPulse",
+  description: "A custom ClassPoint client, done by p55d2k",
 };
 
 export default function RootLayout({

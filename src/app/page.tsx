@@ -96,15 +96,13 @@ export default function Home() {
           <CardHeader className="flex flex-col items-center text-center space-y-4">
             <Image
               src="/logo.png"
-              alt="ClassPoint Client Logo"
+              alt="ClassPulse Logo"
               width={80}
               height={80}
               priority
               className="rounded-md select-none"
             />
-            <CardTitle className="text-2xl">
-              Classpoint Client: Join a Class
-            </CardTitle>
+            <CardTitle className="text-2xl">ClassPulse</CardTitle>
             <CardDescription>
               Enter the code provided by your instructor and your display name.
             </CardDescription>
@@ -170,7 +168,7 @@ export default function Home() {
       </main>
       <footer className="pb-4 text-center text-xs text-muted-foreground">
         <span>
-          Custom ClassPoint Client • Done by{" "}
+          ClassPulse, a custom ClassPulse client • Done by{" "}
           <Link href="https://github.com/p55d2k" className="underline">
             p55d2k
           </Link>
