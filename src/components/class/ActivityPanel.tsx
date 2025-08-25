@@ -24,6 +24,7 @@ export interface ActivityPanelProps {
   onReveal: () => void;
   onSend?: (data: string[]) => void; // send to server
   onSendShort?: (html: string) => void; // short answer raw html
+  onSendDrawing?: (blob: Blob) => void; // slide drawing submission
   // ...existing code...
 }
 
@@ -33,6 +34,7 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
   onReveal,
   onSend,
   onSendShort,
+  onSendDrawing,
   // ...existing code...
 }) => {
   if (!activity) return null;
@@ -204,10 +206,26 @@ export const ActivityPanel: React.FC<ActivityPanelProps> = ({
           </div>
         )}
         {mode === "draw" && activity.slideUrl && (
-          <div className="flex items-center justify-center h-64">
+          <div className="flex flex-col items-center justify-center h-64 gap-4">
             <span className="text-lg font-semibold text-muted-foreground">
-              Feature coming soon
+              Slide Drawing
             </span>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="border-border/60"
+              disabled={locked || !onSendDrawing}
+              onClick={() => {
+                // Placeholder: replace with actual drawing blob
+                const dummyBlob = new Blob(["DRAWING_BLOB_PLACEHOLDER"], {
+                  type: "text/plain",
+                });
+                onSendDrawing?.(dummyBlob);
+              }}
+            >
+              Submit Drawing
+            </Button>
           </div>
         )}
       </div>
