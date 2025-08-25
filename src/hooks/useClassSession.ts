@@ -118,8 +118,15 @@ export function useClassSession() {
       setEventsCount((c) => c + 1);
       if (typeof payload === "object" && payload !== null) {
         const p = payload as Record<string, unknown>;
+        // Check for both participantPoints and participantTotalPoints
+        let newStars = 0;
         if (typeof p.participantPoints === "number") {
-          const newStars = p.participantPoints;
+          newStars += p.participantPoints;
+        }
+        if (typeof p.participantTotalPoints === "number") {
+          newStars += p.participantTotalPoints;
+        }
+        if (newStars > 0) {
           setStars(newStars);
           // Suppress level-up animation for the very first authoritative points sync
           if (!initialPointsAppliedRef.current) {
@@ -515,7 +522,7 @@ export function useClassSession() {
         // Explicitly clear any existing activity before loading the new one.
         setActivity(null);
         const actType = String(p.activityType || "");
-  if (actType === "Short Answer") {
+        if (actType === "Short Answer") {
           // Short Answer
           let submitted: string[] = [];
           let submittedDetails: { responseId: string; data: string }[] = [];
@@ -789,7 +796,7 @@ export function useClassSession() {
 
   const submitActivityResponse = useCallback(
     (choices: string[]) => {
-  if (!activity || !hubRef.current || choices.length === 0) return;
+      if (!activity || !hubRef.current || choices.length === 0) return;
       try {
         const ctx = readJoinContext();
         const responseId =
@@ -830,7 +837,7 @@ export function useClassSession() {
   // Short Answer raw HTML submission (responseData is raw HTML string, not JSON array)
   const submitShortAnswer = useCallback(
     (html: string) => {
-  if (!activity || activity.mode !== "short" || !hubRef.current) return;
+      if (!activity || activity.mode !== "short" || !hubRef.current) return;
       const trimmed = html.trim();
       if (!trimmed) return;
       try {
@@ -964,9 +971,9 @@ export function useClassSession() {
         // Convert blob to base64 data URL
         const dataUrl: string = await new Promise((resolve, reject) => {
           const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result));
-            reader.onerror = (e) => reject(e);
-            reader.readAsDataURL(blob);
+          reader.onload = () => resolve(String(reader.result));
+          reader.onerror = (e) => reject(e);
+          reader.readAsDataURL(blob);
         });
         const ctx = readJoinContext();
         const responseId =
@@ -1029,8 +1036,8 @@ export function useClassSession() {
     setStars,
     setConfettiBursts,
     setSlideImageLoading,
-  lastDeletedResponse,
-  submitSlideDrawing,
+    lastDeletedResponse,
+    submitSlideDrawing,
   } as ClassSessionState & {
     setStars: typeof setStars;
     setConfettiBursts: typeof setConfettiBursts;
@@ -1043,7 +1050,7 @@ export function useClassSession() {
     toggleActivityReveal: typeof toggleActivityReveal;
     submitActivityResponse: typeof submitActivityResponse;
     submitShortAnswer: typeof submitShortAnswer;
-  lastDeletedResponse: typeof lastDeletedResponse;
-  submitSlideDrawing: typeof submitSlideDrawing;
+    lastDeletedResponse: typeof lastDeletedResponse;
+    submitSlideDrawing: typeof submitSlideDrawing;
   };
 }
